@@ -17,10 +17,13 @@
 #define PART_BYTES (32 * 1024 * 1024)
 #define MAX_PARTS  8
 
-// Two module builds: one that uses the mouse, one that does not. The door picks
-// from the Query reply, so an older TRACE client still plays (by keyboard)
-// rather than downloading 72 MB and then failing to start.
-static tdoor_blob_t g_moduleMouse, g_moduleBasic;
+// One module build, which needs the mouse. There used to be a keyboard-only
+// build for older TRACE clients, dropped 2026-09-20: without a pointer there
+// is no way out of the game's own control panel (Enter does not work the
+// buttons), so a caller could only leave by dropping the carrier. A door you
+// cannot quit is worse than a door you cannot enter, and the refusal below
+// says plainly what is needed.
+static tdoor_blob_t g_moduleMouse;
 static tdoor_blob_t *g_module;
 static tdoor_blob_t g_parts[MAX_PARTS];     // sky.dsk, split
 static int          g_partCount;
@@ -100,11 +103,7 @@ bool trace_sky_load_files(void)
     tdoor_init(MODULE_ID, on_message);
     g_error[0] = '\0';
 
-    bool mouse = tdoor_load_blob("steelsky.wasm",       &g_moduleMouse, 32 * 1024 * 1024);
-    bool basic = tdoor_load_blob("steelsky-basic.wasm", &g_moduleBasic, 32 * 1024 * 1024);
-    if (!basic && mouse) g_moduleBasic = g_moduleMouse;
-    if (!mouse && basic) g_moduleMouse = g_moduleBasic;
-    if (!mouse && !basic) {
+    if (!tdoor_load_blob("steelsky.wasm", &g_moduleMouse, 32 * 1024 * 1024)) {
         snprintf(g_error, sizeof g_error, "steelsky.wasm is missing");
         return false;
     }
@@ -131,12 +130,15 @@ bool trace_sky_load_files(void)
 
 bool trace_sky_detect(void)
 {
-    // No mouse in the list on purpose: the module has a keyboard cursor, so an
-    // older TRACE client can still play.
-    static const char *const need[] = { "assets=1", "send=1", "audio=1", NULL };
+    // mouse=1 is required, not preferred. A client without it cannot even LOAD
+    // this module -- wasm imports are static, so naming trace_mouse_mode is
+    // fatal on a TERMinator that does not export it -- and the player would
+    // have downloaded the module first to find out. Refusing here turns that
+    // into one clear sentence before anything is sent.
+    static const char *const need[] = { "assets=1", "send=1", "audio=1", "mouse=1", NULL };
     tdoor_init(MODULE_ID, on_message);
     if (!tdoor_detect(need)) return false;
-    g_module = tdoor_has("mouse=1") ? &g_moduleMouse : &g_moduleBasic;
+    g_module = &g_moduleMouse;
     return g_module->data != NULL;
 }
 

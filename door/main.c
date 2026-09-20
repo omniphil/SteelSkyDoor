@@ -97,11 +97,11 @@ int main(int argc, char *argv[])
     }
 
     if (!detect_with_animation()) {
-        door_write(CSI "0;37m\r\n  This game needs TRACE graphics, which means ");
+        door_write(CSI "0;37m\r\n  This game needs TRACE mouse support in ");
         write_terminator();
-        door_write(CSI "0;37m" ".\r\n" CSI "0m");
-        door_write(CSI "0;90m  Any other terminal can't draw it: it's a 320x200 adventure,\r\n"
-                       "  not something that fits in text.\r\n" CSI "0m");
+        door_write(CSI "0;37m" " 1.1.3 or newer.\r\n" CSI "0m");
+        door_write(CSI "0;90m  It's a 320x200 adventure played by pointing, and its own menu --\r\n"
+                       "  the only way to save or quit -- needs clicking.\r\n" CSI "0m");
         press_any_key();
         door_cleanup();
         return 0;
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
      * a long first call. It only happens once -- TERMinator caches by hash. */
     char note[256];
     snprintf(note, sizeof note,
-             CSI "0;37m\r\n  Sending the game: %.0f MB.\r\n"
+             CSI "0;37m\r\n  Sending the game: %.0f MB (large as we have included speech pack).\r\n"
              CSI "0;90m  This happens once. Your terminal keeps it, so next time you\r\n"
              "  dial in the game starts straight away.\r\n\r\n" CSI "0m",
              trace_sky_data_size() / 1048576.0);
@@ -155,13 +155,23 @@ int main(int argc, char *argv[])
     const int played = (int)(time(NULL) - began);
     trace_sky_close();
 
-    /* If the picture opened and shut again straight away, the module didn't run
-     * on the caller's machine. Say why rather than pretending all was well. */
-    if (played < 3) {
+    /* Two ways this ends badly, and both used to go unreported once the game had
+     * been running a while:
+     *   - the picture opened and shut again straight away: the module never ran
+     *     on the caller's machine;
+     *   - the module DIED mid-game. TERMinator only puts ";error=" in the Closed
+     *     report when the module exited abnormally, so a reason at any point
+     *     means a crash -- and that is the case that was silently looking like a
+     *     normal goodbye after an hour of play.
+     * Either way, say why rather than pretending all was well. */
+    const char *why = trace_sky_close_reason();
+    const bool crashed = (why != NULL && *why != '\0');
+    if (played < 3 || crashed) {
         cls();
         title();
-        door_write(CSI "1;31m  The game closed straight away.\r\n\r\n" CSI "0m");
-        const char *why = trace_sky_close_reason();
+        door_write(crashed && played >= 3
+                   ? CSI "1;31m  The game stopped unexpectedly.\r\n\r\n" CSI "0m"
+                   : CSI "1;31m  The game closed straight away.\r\n\r\n" CSI "0m");
         door_write(CSI "1;33m  Reason: " CSI "0m");
         door_write((why && *why) ? why : "(none given)");
         door_write("\r\n\r\n");
