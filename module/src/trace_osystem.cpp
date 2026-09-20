@@ -120,7 +120,13 @@ void OSystem_TRACE::pushEngineAction(int customType) {
 void OSystem_TRACE::pushQuit() {
 	Common::Event e;
 	e.type = Common::EVENT_QUIT;
+	// 🚨 Under the lock like every other push: this one runs on the module's
+	// input thread while the game thread is popping in pollEvent(). It was the
+	// only pusher that didn't take it, which is a corrupted queue waiting to
+	// happen -- and the crash it causes lands nowhere near here.
+	pthread_mutex_lock((pthread_mutex_t *)_eventLock);
 	_events.push(e);
+	pthread_mutex_unlock((pthread_mutex_t *)_eventLock);
 	_quit = true;
 }
 
@@ -192,7 +198,10 @@ char g_soundDebug[64] = {0};
 // -- and that bed is mastered far hotter than anything else. 16 was too loud
 // and 0 silenced it, so 8 is the midpoint between the two values actually
 // heard rather than a level tested on its own.
-int g_volSynth = 200, g_volMusic = 200, g_volSfx = 8, g_volSpeech = 256;
+// g_volSynth is 150 rather than 90 to pay for re-centring the panel's music slider:
+// the AdLib driver's own volume went 107 -> 64 with it (adlibchannel.cpp scales
+// linearly by _musicVolume), and 150 x 64 == 90 x 107, so the music sounds the same.
+int g_volSynth = 150, g_volMusic = 90, g_volSfx = 20, g_volSpeech = 40;
 volatile unsigned g_pollCount = 0, g_delayCount = 0;
 
 // One presenter at a time, whichever thread it is.

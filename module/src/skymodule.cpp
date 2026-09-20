@@ -109,9 +109,17 @@ void *gameMain(void *) {
 	// kSFXSoundType. So the score rides on the sound-EFFECTS channel, and
 	// music_volume -- along with the AdLib synth's own volume and the mixer's
 	// kMusicSoundType -- has nothing to do with it. That bed is mastered far
-	// hotter than the voices too, hence 8 against 256 for everything else.
-	ConfMan.setInt("music_volume", 200);
-	ConfMan.setInt("sfx_volume", 8);
+	// hotter than the voices too, hence 20 against 256 for everything else.
+	// 2026-09-20: 200/8 -> 215/20 after listening on a second PC, where the
+	// whole mix came out quieter. Raising sfx_volume is what lifts the score.
+	// 128 of 256 puts the control panel's music slider in the MIDDLE, with room
+	// to go both ways. It is only a starting position, not the loudness: sky.cpp
+	// turns it into the AdLib driver's own 0-127 volume (music_volume >> 1 = 64),
+	// and g_volSynth below is set so that 64 sounds exactly like the old 215/107
+	// did. Raising the slider from there makes the music louder than our tuned
+	// level, lowering it quieter, which is what a slider is for.
+	ConfMan.setInt("music_volume", 128);
+	ConfMan.setInt("sfx_volume", 20);
 	ConfMan.setInt("speech_volume", 256);
 
 	// ScummVM's main() registers the engine's keymaps before running it, taking
@@ -237,6 +245,21 @@ int  g_introStarted = 0;        // when the intro proper began, 0 until it has
 int  g_introFirstSeen = 0;
 // How long after the intro starts before the skip hint appears.
 const int kIntroHintDelayMs = 5000;
+
+// A breadcrumb for the crash report. TE_OUT_LOG lines are kept by TERMinator
+// as the module's output tail, and when a module dies rather than quitting the
+// client puts the last one in the Closed report the door gets ("...|last: ..."),
+// so the sysop's log says what the module was doing when it went. The engine
+// stage (g_traceStage, updated by every OSystem call) rides along, because
+// "opening the control panel" is only half the story without "...from inside
+// delay()". Cheap enough to leave in: a handful of lines a session.
+void sky_breadcrumb(const char *what) {
+	char line[96];
+	const char *stage = g_traceStage ? g_traceStage : "?";
+	int n = snprintf(line, sizeof(line), "steelsky: %s [%s]", what, stage);
+	if (n > 0)
+		trace_log(line, (int32_t)(n < (int)sizeof(line) ? n : (int)sizeof(line) - 1));
+}
 
 void moveCursor(int dx, int dy) {
 	g_curX += dx;
@@ -378,6 +401,24 @@ void trace_on_input(int32_t type, int32_t flags, int32_t a, int32_t b, int32_t c
 	switch (type) {
 	case 1: {                                   // TE_IN_KEY
 		const bool down = (flags & 1) != 0;
+
+		// Enter in the CONTROL PANEL means confirm, and the panel only takes that
+		// as an action -- kSkyActionConfirm, not a key and not a click
+		// (control.cpp's save-name dialog, "enter pressed").
+		//
+		// 🚨 This has to sit ABOVE the keyboard-cursor block, for two separate
+		// reasons that each hid it on their own: that block returns early on
+		// Enter, AND it is skipped entirely once g_haveRealMouse latches -- which
+		// any TERMinator that sends mouse positions does the moment the player
+		// nudges the mouse, even if they then play from the keyboard.
+		// Sent as well as whatever else Enter does, never instead: the game loop
+		// has no case for Confirm (sky.cpp handleKey), so it is a no-op there and
+		// a stale g_panelOpen cannot cost the player "use".
+		if (down && a == 0x1C && g_panelOpen) {
+			sky_breadcrumb("enter: confirm (panel)");
+			g_trace->pushEngineAction(kSkyActionConfirm);
+		}
+
 		// Without a mouse, the arrows drive the cursor instead of the engine.
 		if (!g_haveRealMouse && down) {
 			const int step = (flags & 4) ? 10 : 2;   // Shift moves faster
@@ -409,10 +450,15 @@ void trace_on_input(int32_t type, int32_t flags, int32_t a, int32_t b, int32_t c
 		// panel, so a wrong guess is always harmless.
 		if (down && a == 0x01 && !introPlaying()) {
 			if (!g_panelOpen) {
+				sky_breadcrumb("esc: opening the control panel");
 				g_trace->pushEngineAction(kSkyActionOpenControlPanel);
 				g_panelOpen = true;
 				break;   // 🚨 and NOTHING else -- see below
 			}
+			// The latch says the panel is already up, so the Escape KEY goes
+			// through instead. This is the path the crashing build tripped on,
+			// and the latch is only a belief -- so say so in the breadcrumb.
+			sky_breadcrumb("esc: panel believed open, sending the key");
 			g_panelOpen = false;   // fall through: the key itself closes it
 		}
 		// 🚨 Sending the Escape key TOO is what made this look dead. The queue
@@ -423,7 +469,10 @@ void trace_on_input(int32_t type, int32_t flags, int32_t a, int32_t b, int32_t c
 		// So it is one or the other: the action to open, the key to close.
 		// F5 opens the panel through the keymapper, bypassing the latch above,
 		// so note it or the next Escape would try to open an open panel.
-		if (down && a == 0x3F) g_panelOpen = true;
+		if (down && a == 0x3F) {
+			sky_breadcrumb("f5: control panel");
+			g_panelOpen = true;
+		}
 
 #if TRACE_SOUND_DEBUG
 		// Live level control, so the balance can be found by ear in one

@@ -109,8 +109,20 @@ private:
 	// puts it back to maximum, and the control panel calls that whenever the
 	// player touches the settings.
 	void enforceLevels() {
+		// The AdLib synth is pinned: the panel's slider already reaches it, through
+		// the driver's own volume (sky.cpp syncSoundSettings -> setVolume), so
+		// scaling here too would move it twice.
 		set(Audio::Mixer::kPlainSoundType,  g_volSynth);
-		set(Audio::Mixer::kMusicSoundType,  g_volMusic);
+		// Digital music tracks are the other half of "music", and the driver's
+		// volume does NOT reach them -- so the slider is applied here instead, or
+		// it would have no effect on them at all. 128 (the middle) means our tuned
+		// level, 256 twice it, 0 silence.
+		int musicCfg = ConfMan.hasKey("music_volume") ? ConfMan.getInt("music_volume") : 128;
+		if (musicCfg < 0) musicCfg = 0;
+		if (musicCfg > 256) musicCfg = 256;
+		int digital = g_volMusic * musicCfg / 128;
+		if (digital > 256) digital = 256;
+		set(Audio::Mixer::kMusicSoundType,  digital);
 		set(Audio::Mixer::kSFXSoundType,    g_volSfx);
 		set(Audio::Mixer::kSpeechSoundType, g_volSpeech);
 	}
