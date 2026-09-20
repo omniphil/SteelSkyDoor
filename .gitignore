@@ -1,0 +1,20 @@
+# Fetched, not vendored -- see tools/get_scummvm.sh and tools/get_game.sh
+third_party/
+data/
+
+# Build output
+module/obj/
+module/config/
+module/*.wasm
+door/*.o
+door/steelskydoor
+
+# Copies made by `make -C door install`
+door/*.wasm
+door/sky.cpt
+door/sky.dnr
+door/sky.dsk
+
+# Players' saved games
+door/saves/
+__pycache__/

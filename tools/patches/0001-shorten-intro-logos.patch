@@ -1,0 +1,32 @@
+diff --git a/engines/sky/intro.cpp b/engines/sky/intro.cpp
+index f134065..27f1767 100644
+--- a/engines/sky/intro.cpp
++++ b/engines/sky/intro.cpp
+@@ -243,15 +243,15 @@ namespace Sky {
+ 
+ 
+ uint16 Intro::_mainIntroSeq[] = {
+-	DELAY,       3000, // keep virgin screen up
++	DELAY,        500, // keep virgin screen up
+ 	FADEDOWN,
+ 	SHOWSCREEN, 60112, // revo screen + palette
+ 	FADEUP,     60113,
+-	DELAY,       8000,
++	DELAY,       1400,
+ 	FADEDOWN,
+ 	SHOWSCREEN, 60114, // gibbo screen + palette
+ 	FADEUP,     60115,
+-	DELAY,       2000,
++	DELAY,        600,
+ 	FADEDOWN,
+ 	SEQEND
+ };
+@@ -668,7 +668,7 @@ bool Intro::doIntro(bool floppyIntro) {
+ 	_skyMusic->loadSection(0);
+ 	_skySound->loadSection(0);
+ 
+-	if (!escDelay(3000))
++	if (!escDelay(500))
+ 		return false;
+ 
+ 	if (floppyIntro)
