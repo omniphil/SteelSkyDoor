@@ -30,7 +30,9 @@ static char             g_info[512];      /* the Query reply */
 static bool             g_binary;         /* the terminal takes binary frames (bin=1) */
 static bool             g_open;
 static char             g_have_hash[65];
-static char             g_close_reason[128];
+/* The client sends up to 200 characters (the host's trap line plus the module's
+ * last breadcrumb), so keep room for all of it and the terminator. */
+static char             g_close_reason[256];
 
 void tdoor_init(const char *module_id, tdoor_message_fn on_message)
 {

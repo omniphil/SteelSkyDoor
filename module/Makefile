@@ -58,7 +58,7 @@ OBJDIR = obj
 # failing to start.
 OUT = steelsky.wasm
 
-all: $(OUT) basic
+all: $(OUT) deploy
 
 # Separate object directory AND output name: the two builds differ by a -D, so
 # sharing objects would link the wrong ones into whichever built second, and
@@ -72,11 +72,23 @@ basic:
 $(OUT): $(OWN_SRC) $(OWN_HDR) config/config.h $(SCUMMVM)/engines/plugins_table.h
 	@mkdir -p $(OBJDIR)
 	@echo "compiling ScummVM (this takes a few minutes the first time)..."
-	@n=0; for f in $$(cd $(SCUMMVM) && find $(SCUMM_DIRS) -maxdepth 3 -name '*.cpp' 2>/dev/null) $(SCUMM_FILES); do \
+	@rm -f $(OBJDIR)/failed-sources.txt
+	@for f in $$(cd $(SCUMMVM) && find $(SCUMM_DIRS) -maxdepth 3 -name '*.cpp' 2>/dev/null) $(SCUMM_FILES); do \
 	    o=$(OBJDIR)/$$(echo $$f | tr '/' '_' | sed 's/.cpp$$/.o/'); \
 	    if [ ! -f $$o ] || [ $(SCUMMVM)/$$f -nt $$o ]; then \
-	        $(CXX) $(CXXFLAGS) -c $(SCUMMVM)/$$f -o $$o 2>/dev/null || true; \
+	        $(CXX) $(CXXFLAGS) -c $(SCUMMVM)/$$f -o $$o 2>/dev/null \
+	            || echo $$f >> $(OBJDIR)/failed-sources.txt; \
 	    fi; done
+# A file that didn't compile leaves no .o and says nothing, so the build sails on and dies much later at the
+# LINK, naming whichever object happened to reference the missing symbol. That is how a missing
+# third_party/scummvm/backends/ folder once turned into 500 'undefined symbol: g_system' errors pointing at
+# audio_chip.o -- the real casualty was common/system.cpp, which defines g_system and had quietly failed on a
+# missing header. So: keep shrugging failures off (most are meant to fail, see above), but write down WHICH.
+	@if [ -s $(OBJDIR)/failed-sources.txt ]; then \
+	    echo "note: $$(wc -l < $(OBJDIR)/failed-sources.txt) ScummVM sources didn't compile -- expected for"; \
+	    echo "      optional libraries and other platforms. If the link below fails, read this list FIRST:"; \
+	    echo "        $(OBJDIR)/failed-sources.txt"; \
+	 fi
 	@for f in $(OWN_SRC); do \
 	    $(CXX) $(CXXFLAGS) -c $$f -o $(OBJDIR)/own_$$(basename $${f%.cpp}).o || exit 1; done
 	$(CXX) $(CXXFLAGS) $(OBJDIR)/*.o $(LDFLAGS) -o $@
@@ -91,7 +103,20 @@ $(SCUMMVM)/engines/plugins_table.h:
 	@echo 'LINK_PLUGIN(SKY)' > $(SCUMMVM)/engines/plugins_table.h
 	@echo 'LINK_PLUGIN(SKY_DETECTION)' > $(SCUMMVM)/engines/detection_table.h
 
+# The door reads steelsky.wasm from beside its own binary, and door/ is the folder
+# that actually goes to the BBS -- module/ is only where make writes. Nothing
+# copied between them, which is how door/ once went a whole day holding the
+# morning's module while module/ looked correctly built. So the build does it.
+#
+# Deliberately depends on the two real names rather than $(OUT): a tuning build
+# (make OUT=steelsky-tune.wasm ...) names its own target, so it never lands here
+# and cannot quietly replace the module the BBS is serving.
+DOORDIR = ../door
+deploy: steelsky.wasm
+	@cp -f steelsky.wasm $(DOORDIR)/
+	@echo "deployed -> $(DOORDIR)/ (steelsky.wasm)"
+
 clean:
 	rm -rf $(OBJDIR) $(OBJDIR)-basic steelsky.wasm steelsky-basic.wasm
 
-.PHONY: all basic clean
+.PHONY: all basic clean deploy
